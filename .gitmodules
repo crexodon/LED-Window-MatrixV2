@@ -1,3 +1,6 @@
 [submodule "software/PixelBridge"]
 	path = software/PixelBridge
 	url = git@github.com:crexodon/PixelBridge.git
+[submodule "Software/PixelBridge"]
+	path = Software/PixelBridge
+	url = git@github.com:crexodon/PixelBridge.git
