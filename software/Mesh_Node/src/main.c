@@ -17,41 +17,7 @@
 
 // #define MEMORY_DEBUG
 
-static const char *TAG = "get_started";
-
-static void root_task(void *arg)
-{
-    mdf_err_t ret                    = MDF_OK;
-    char *data                       = MDF_MALLOC(MWIFI_PAYLOAD_LEN);
-    size_t size                      = MWIFI_PAYLOAD_LEN;
-    uint8_t src_addr[MWIFI_ADDR_LEN] = {0x0};
-    mwifi_data_type_t data_type      = {0};
-
-    MDF_LOGI("Root is running");
-
-    for (int i = 0;; ++i) {
-        if (!mwifi_is_started()) {
-            vTaskDelay(500 / portTICK_RATE_MS);
-            continue;
-        }
-
-        size = MWIFI_PAYLOAD_LEN;
-        memset(data, 0, MWIFI_PAYLOAD_LEN);
-        ret = mwifi_root_read(src_addr, &data_type, data, &size, portMAX_DELAY);
-        MDF_ERROR_CONTINUE(ret != MDF_OK, "<%s> mwifi_root_read", mdf_err_to_name(ret));
-        MDF_LOGI("Root receive, addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
-
-        size = sprintf(data, "(%d) Hello node!", i);
-        ret = mwifi_root_write(src_addr, 1, &data_type, data, size, true);
-        MDF_ERROR_CONTINUE(ret != MDF_OK, "mwifi_root_recv, ret: %x", ret);
-        MDF_LOGI("Root send, addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
-    }
-
-    MDF_LOGW("Root is exit");
-
-    MDF_FREE(data);
-    vTaskDelete(NULL);
-}
+static const char *TAG = "mesh_node";
 
 static void node_read_task(void *arg)
 {
@@ -98,9 +64,9 @@ void node_write_task(void *arg)
             continue;
         }
 
-        size = sprintf(data, "(%d) Hello root!", count++);
-        ret = mwifi_write(NULL, &data_type, data, size, true);
-        MDF_ERROR_CONTINUE(ret != MDF_OK, "mwifi_write, ret: %x", ret);
+        // size = sprintf(data, "(%d) Hello root!", count++);
+        // ret = mwifi_write(NULL, &data_type, data, size, true);
+        // MDF_ERROR_CONTINUE(ret != MDF_OK, "mwifi_write, ret: %x", ret);
 
         vTaskDelay(1000 / portTICK_RATE_MS);
     }
@@ -231,15 +197,11 @@ void app_main()
     /**
      * @brief Data transfer between wifi mesh devices
      */
-    if (config.mesh_type == MESH_ROOT) {
-        xTaskCreate(root_task, "root_task", 4 * 1024,
-                    NULL, CONFIG_MDF_TASK_DEFAULT_PRIOTY, NULL);
-    } else {
-        xTaskCreate(node_write_task, "node_write_task", 4 * 1024,
-                    NULL, CONFIG_MDF_TASK_DEFAULT_PRIOTY, NULL);
-        xTaskCreate(node_read_task, "node_read_task", 4 * 1024,
-                    NULL, CONFIG_MDF_TASK_DEFAULT_PRIOTY, NULL);
-    }
+
+    xTaskCreate(node_write_task, "node_write_task", 4 * 1024,
+                NULL, CONFIG_MDF_TASK_DEFAULT_PRIOTY, NULL);
+    xTaskCreate(node_read_task, "node_read_task", 4 * 1024,
+                NULL, CONFIG_MDF_TASK_DEFAULT_PRIOTY, NULL);
 
     TimerHandle_t timer = xTimerCreate("print_system_info", 10000 / portTICK_RATE_MS,
                                        true, NULL, print_system_info_timercb);
