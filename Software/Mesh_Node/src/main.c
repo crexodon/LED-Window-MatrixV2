@@ -15,9 +15,18 @@
 #include "mdf_common.h"
 #include "mwifi.h"
 
+#include "globals.h"
+#include "led.h"
+
 // #define MEMORY_DEBUG
 
-static const char *TAG = "mesh_node";
+typedef struct {
+    uint8_t command;
+    uint8_t data[];
+} ledMeshPayload_t;
+
+// static const uint8_t ledMeshPayloadHeaderSize = sizeof(ledMeshPayload_t);
+
 
 static void node_read_task(void *arg)
 {
@@ -40,6 +49,12 @@ static void node_read_task(void *arg)
         ret = mwifi_read(src_addr, &data_type, data, &size, portMAX_DELAY);
         MDF_ERROR_CONTINUE(ret != MDF_OK, "mwifi_read, ret: %x", ret);
         MDF_LOGI("Node receive, addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
+        
+        switch (data_type.custom) {
+            case CMD_LedData:
+                ledSetData((uint8_t*)data, size);
+                break;
+        }
     }
 
     MDF_LOGW("Note read task is exit");
@@ -206,4 +221,6 @@ void app_main()
     TimerHandle_t timer = xTimerCreate("print_system_info", 10000 / portTICK_RATE_MS,
                                        true, NULL, print_system_info_timercb);
     xTimerStart(timer, 0);
+
+    ledInit();
 }

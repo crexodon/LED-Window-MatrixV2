@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "rmt.h": "c",
+        "mdf_common.h": "c",
+        "led_strip.h": "c",
+        "globals.h": "c"
+    }
+}
