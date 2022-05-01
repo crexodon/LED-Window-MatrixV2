@@ -3,16 +3,26 @@
 #include "mwifi.h"
 
 #include "globals.h"
+#include "ota.h"
+
+// example UDP command in bash for setting LEDs:   echo -e "\x7c\x9e\xbd\xf4\xdd\x84\x01\x00\x00\xFF\x00\xFF\x00\xFF\x00\x00\xFF\xAF\x00\x00\x00\x00" | nc -u -w0 192.168.1.105 7715
 
 void udpReceiveCallback(uint8_t *payload, size_t payloadLen, struct sockaddr_storage sourceAddr) {
     ledPayload_t* packet = (ledPayload_t*)payload;
     size_t dataLen = payloadLen - ledPayloadHeaderSize;
 
-    // example UDP command in bash:   echo -e "\x7c\x9e\xbd\xf4\xdd\x84\x01\x00\x00\xFF\x00\xFF\x00\xFF\x00\x00\xFF\xAF\x00\x00\x00\x00" | nc -u -w0 192.168.1.105 7715
-    if (packet->command == CMD_LedData) {
-        mwifi_data_type_t data_type = {0x0};
-        data_type.custom = packet->command;
-        mdf_err_t ret = mwifi_root_write(packet->mac, 1, &data_type, packet->data, dataLen, false);
+    switch (packet->command) {
+        case CMD_OTA:
+            // update url is contained in packet data, has to be sent with trailing null byte!
+            // also the file has to have the same name as the project ("TAG"), because it's identified by that
+            otaStart((char*)packet->data);
+            break;
+
+        default: {  // forward everything else to nodes
+            mwifi_data_type_t data_type = {0x0};
+            data_type.custom = packet->command;
+            mdf_err_t ret = mwifi_root_write(packet->mac, 1, &data_type, packet->data, dataLen, false);
+        }
     }
 }
 

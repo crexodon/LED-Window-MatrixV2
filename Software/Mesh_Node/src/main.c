@@ -14,6 +14,7 @@
 
 #include "mdf_common.h"
 #include "mwifi.h"
+#include "mupgrade.h"
 
 #include "globals.h"
 #include "led.h"
@@ -48,12 +49,23 @@ static void node_read_task(void *arg)
         memset(data, 0, MWIFI_PAYLOAD_LEN);
         ret = mwifi_read(src_addr, &data_type, data, &size, portMAX_DELAY);
         MDF_ERROR_CONTINUE(ret != MDF_OK, "mwifi_read, ret: %x", ret);
-        MDF_LOGI("Node receive, addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
-        
-        switch (data_type.custom) {
-            case CMD_LedData:
-                ledSetData((uint8_t*)data, size);
-                break;
+        if (data_type.upgrade) {
+            ret = mupgrade_handle(src_addr, data, size);
+            MDF_ERROR_CONTINUE(ret != MDF_OK, "<%s> mupgrade_handle", mdf_err_to_name(ret));
+        }
+        else {
+            MDF_LOGI("Node receive, addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
+
+            switch (data_type.custom) {
+                case CMD_LedData:
+                    ledSetData((uint8_t*)data, size);
+                    break;
+                case CMD_Restart:
+                    MDF_LOGI("Restarting the node...");
+                    MDF_LOGW("The device will restart after 1 seconds");
+                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    esp_restart();
+            }
         }
     }
 
@@ -199,6 +211,8 @@ void app_main()
      */
     esp_log_level_set("*", ESP_LOG_INFO);
     esp_log_level_set(TAG, ESP_LOG_DEBUG);
+    esp_log_level_set("mupgrade_root", ESP_LOG_DEBUG);
+    esp_log_level_set("mupgrade_node", ESP_LOG_DEBUG);
 
     /**
      * @brief Initialize wifi mesh.

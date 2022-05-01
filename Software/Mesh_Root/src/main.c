@@ -18,12 +18,14 @@
 #include "secrets.h"
 #include "globals.h"
 #include "udp.h"
+#include "ota.h"
 
 // #define MEMORY_DEBUG
 
 esp_netif_t *sta_netif;
 
-static void root_task(void *arg)
+// handle data addressed to external IP network
+static void root_read_task(void *arg)
 {
     mdf_err_t ret                    = MDF_OK;
     char *data                       = MDF_MALLOC(MWIFI_PAYLOAD_LEN);
@@ -31,7 +33,7 @@ static void root_task(void *arg)
     uint8_t src_addr[MWIFI_ADDR_LEN] = {0x0};
     mwifi_data_type_t data_type      = {0};
 
-    MDF_LOGI("Root is running");
+    MDF_LOGI("Root read task is running");
 
     for (int i = 0;; ++i) {
         if (!mwifi_is_started()) {
@@ -43,15 +45,63 @@ static void root_task(void *arg)
         memset(data, 0, MWIFI_PAYLOAD_LEN);
         ret = mwifi_root_read(src_addr, &data_type, data, &size, portMAX_DELAY);
         MDF_ERROR_CONTINUE(ret != MDF_OK, "<%s> mwifi_root_read", mdf_err_to_name(ret));
-        MDF_LOGI("Root receive, addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
 
-        // size = sprintf(data, "(%d) Hello node!", i);
-        // ret = mwifi_root_write(src_addr, 1, &data_type, data, size, true);
-        // MDF_ERROR_CONTINUE(ret != MDF_OK, "mwifi_root_recv, ret: %x", ret);
-        // MDF_LOGI("Root send, addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
+        if (data_type.upgrade) { // This mesh package contains upgrade data.
+            ret = mupgrade_root_handle(src_addr, data, size);
+            MDF_ERROR_CONTINUE(ret != MDF_OK, "<%s> mupgrade_root_handle", mdf_err_to_name(ret));
+        } 
+        else {
+            MDF_LOGI("Receive [NODE] addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
+        }
     }
 
     MDF_LOGW("Root is exit");
+
+    MDF_FREE(data);
+    vTaskDelete(NULL);
+}
+
+// handle data addressed to root node
+static void node_read_task(void *arg)
+{
+    mdf_err_t ret = MDF_OK;
+    char *data    = MDF_MALLOC(MWIFI_PAYLOAD_LEN);
+    size_t size   = MWIFI_PAYLOAD_LEN;
+    mwifi_data_type_t data_type      = {0x0};
+    uint8_t src_addr[MWIFI_ADDR_LEN] = {0};
+
+    MDF_LOGI("Node read task is running");
+
+    for (;;) {
+        if (!mwifi_is_connected()) {
+            vTaskDelay(500 / portTICK_RATE_MS);
+            continue;
+        }
+
+        size = MWIFI_PAYLOAD_LEN;
+        memset(data, 0, MWIFI_PAYLOAD_LEN);
+        ret = mwifi_read(src_addr, &data_type, data, &size, portMAX_DELAY);
+        MDF_ERROR_CONTINUE(ret != MDF_OK, "<%s> mwifi_root_recv", mdf_err_to_name(ret));
+
+        if (data_type.upgrade) { // This mesh package contains upgrade data.
+            ret = mupgrade_handle(src_addr, data, size);
+            MDF_ERROR_CONTINUE(ret != MDF_OK, "<%s> mupgrade_handle", mdf_err_to_name(ret));
+        } 
+        else {
+            MDF_LOGI("Receive [ROOT] addr: " MACSTR ", size: %d, data: %s",
+                     MAC2STR(src_addr), size, data);
+
+            switch (data_type.custom) {
+                case CMD_Restart:
+                    MDF_LOGI("Restarting the node...");
+                    MDF_LOGW("The device will restart after 1 seconds");
+                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    esp_restart();
+            }
+        }
+    }
+
+    MDF_LOGW("Node read task is exit");
 
     MDF_FREE(data);
     vTaskDelete(NULL);
@@ -154,6 +204,8 @@ static mdf_err_t event_loop_cb(mdf_event_loop_t event, void *ctx)
             break;
     }
 
+    otaHandleEvent(event, ctx);
+
     return MDF_OK;
 }
 
@@ -174,6 +226,8 @@ void app_main()
      */
     esp_log_level_set("*", ESP_LOG_INFO);
     esp_log_level_set(TAG, ESP_LOG_DEBUG);
+    esp_log_level_set("mupgrade_root", ESP_LOG_DEBUG);
+    esp_log_level_set("mupgrade_node", ESP_LOG_DEBUG);
 
     /**
      * @brief Initialize wifi mesh.
@@ -187,7 +241,10 @@ void app_main()
     /**
      * @brief Data transfer between wifi mesh devices
      */
-    xTaskCreate(root_task, "root_task", 4 * 1024,
+    xTaskCreate(root_read_task, "root_read_task", 4 * 1024,
+                NULL, CONFIG_MDF_TASK_DEFAULT_PRIOTY, NULL);
+
+    xTaskCreate(node_read_task, "node_read_task", 4 * 1024,
                 NULL, CONFIG_MDF_TASK_DEFAULT_PRIOTY, NULL);
 
     TimerHandle_t timer = xTimerCreate("print_system_info", 10000 / portTICK_RATE_MS,

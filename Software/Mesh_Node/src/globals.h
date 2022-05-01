@@ -9,4 +9,5 @@ static const char *TAG = "mesh_node";
 
 enum LedPayloadCommand {
     CMD_LedData = 1,
+    CMD_Restart = 100,
 };
