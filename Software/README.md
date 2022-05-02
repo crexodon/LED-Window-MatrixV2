@@ -23,7 +23,7 @@ Command | Description | Payload | Example
 0x65 | Initiate OTA (MAC is currently ignored) | Null terminated string of update URL | `00 00 00 00 00 00 65 http://192.168.1.100:8080/mesh_node.bin 00`
 
 Commands can be easily sent with bash for testing, using echo and nc like this:  
-`echo -ne "\x00\x00\x00\x00\x00\x00\x65http://192.168.1.100:8080/mesh_root.bin\x00" | nc -u -w0 192.168.1.42 7715`  
+`echo -ne "\x00\x00\x00\x00\x00\x00\x65http://192.168.1.100:8077/mesh_root.bin\x00" | nc -u -w0 192.168.1.42 7715`  
 
 
 #### OTA Procedure
