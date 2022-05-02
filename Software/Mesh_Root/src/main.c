@@ -16,27 +16,16 @@
 #include "mwifi.h"
 
 #include "secrets.h"
+#include "globals.h"
+#include "udp.h"
+#include "ota.h"
 
 // #define MEMORY_DEBUG
 
-static const char *TAG = "mesh_root";
-#define UDP_PORT    7715
-
-typedef struct {
-    uint8_t command;
-    uint8_t mac[6];
-    uint8_t data[];
-} ledPayload_t;
-
-static const uint8_t ledPayloadHeaderSize = sizeof(ledPayload_t);
-
-enum LedPayloadCommand {
-    CMD_LedData = 1
-};
-
 esp_netif_t *sta_netif;
 
-static void root_task(void *arg)
+// handle data addressed to external IP network
+static void root_read_task(void *arg)
 {
     mdf_err_t ret                    = MDF_OK;
     char *data                       = MDF_MALLOC(MWIFI_PAYLOAD_LEN);
@@ -44,7 +33,7 @@ static void root_task(void *arg)
     uint8_t src_addr[MWIFI_ADDR_LEN] = {0x0};
     mwifi_data_type_t data_type      = {0};
 
-    MDF_LOGI("Root is running");
+    MDF_LOGI("Root read task is running");
 
     for (int i = 0;; ++i) {
         if (!mwifi_is_started()) {
@@ -56,15 +45,63 @@ static void root_task(void *arg)
         memset(data, 0, MWIFI_PAYLOAD_LEN);
         ret = mwifi_root_read(src_addr, &data_type, data, &size, portMAX_DELAY);
         MDF_ERROR_CONTINUE(ret != MDF_OK, "<%s> mwifi_root_read", mdf_err_to_name(ret));
-        MDF_LOGI("Root receive, addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
 
-        // size = sprintf(data, "(%d) Hello node!", i);
-        // ret = mwifi_root_write(src_addr, 1, &data_type, data, size, true);
-        // MDF_ERROR_CONTINUE(ret != MDF_OK, "mwifi_root_recv, ret: %x", ret);
-        // MDF_LOGI("Root send, addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
+        if (data_type.upgrade) { // This mesh package contains upgrade data.
+            ret = mupgrade_root_handle(src_addr, data, size);
+            MDF_ERROR_CONTINUE(ret != MDF_OK, "<%s> mupgrade_root_handle", mdf_err_to_name(ret));
+        } 
+        else {
+            MDF_LOGI("Receive [NODE] addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
+        }
     }
 
     MDF_LOGW("Root is exit");
+
+    MDF_FREE(data);
+    vTaskDelete(NULL);
+}
+
+// handle data addressed to root node
+static void node_read_task(void *arg)
+{
+    mdf_err_t ret = MDF_OK;
+    char *data    = MDF_MALLOC(MWIFI_PAYLOAD_LEN);
+    size_t size   = MWIFI_PAYLOAD_LEN;
+    mwifi_data_type_t data_type      = {0x0};
+    uint8_t src_addr[MWIFI_ADDR_LEN] = {0};
+
+    MDF_LOGI("Node read task is running");
+
+    for (;;) {
+        if (!mwifi_is_connected()) {
+            vTaskDelay(500 / portTICK_RATE_MS);
+            continue;
+        }
+
+        size = MWIFI_PAYLOAD_LEN;
+        memset(data, 0, MWIFI_PAYLOAD_LEN);
+        ret = mwifi_read(src_addr, &data_type, data, &size, portMAX_DELAY);
+        MDF_ERROR_CONTINUE(ret != MDF_OK, "<%s> mwifi_root_recv", mdf_err_to_name(ret));
+
+        if (data_type.upgrade) { // This mesh package contains upgrade data.
+            ret = mupgrade_handle(src_addr, data, size);
+            MDF_ERROR_CONTINUE(ret != MDF_OK, "<%s> mupgrade_handle", mdf_err_to_name(ret));
+        } 
+        else {
+            MDF_LOGI("Receive [ROOT] addr: " MACSTR ", size: %d, data: %s",
+                     MAC2STR(src_addr), size, data);
+
+            switch (data_type.custom) {
+                case CMD_Restart:
+                    MDF_LOGI("Restarting the node...");
+                    MDF_LOGW("The device will restart after 1 seconds");
+                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    esp_restart();
+            }
+        }
+    }
+
+    MDF_LOGW("Node read task is exit");
 
     MDF_FREE(data);
     vTaskDelete(NULL);
@@ -167,108 +204,11 @@ static mdf_err_t event_loop_cb(mdf_event_loop_t event, void *ctx)
             break;
     }
 
+    otaHandleEvent(event, ctx);
+
     return MDF_OK;
 }
 
-void udpReceiveCallback(uint8_t *payload, size_t payloadLen, struct sockaddr_storage sourceAddr) {
-    ledPayload_t* packet = (ledPayload_t*)payload;
-    size_t dataLen = payloadLen - ledPayloadHeaderSize;
-
-    if (packet->command == CMD_LedData) {
-        mwifi_data_type_t data_type = {0x0};
-        mdf_err_t ret = mwifi_root_write(packet->mac, 1, &data_type, packet->data, dataLen, false);
-    }
-}
-
-// UDP server from IDF example
-static void udp_server_task(void *pvParameters)
-{
-    char rx_buffer[128];
-    char addr_str[128];
-    int addr_family = (int)pvParameters;
-    int ip_protocol = 0;
-    struct sockaddr_in6 dest_addr;
-
-    while (1) {
-
-        if (addr_family == AF_INET) {
-            struct sockaddr_in *dest_addr_ip4 = (struct sockaddr_in *)&dest_addr;
-            dest_addr_ip4->sin_addr.s_addr = htonl(INADDR_ANY);
-            dest_addr_ip4->sin_family = AF_INET;
-            dest_addr_ip4->sin_port = htons(UDP_PORT);
-            ip_protocol = IPPROTO_IP;
-        } else if (addr_family == AF_INET6) {
-            bzero(&dest_addr.sin6_addr.un, sizeof(dest_addr.sin6_addr.un));
-            dest_addr.sin6_family = AF_INET6;
-            dest_addr.sin6_port = htons(UDP_PORT);
-            ip_protocol = IPPROTO_IPV6;
-        }
-
-        int sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
-        if (sock < 0) {
-            ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
-            break;
-        }
-        ESP_LOGI(TAG, "Socket created");
-
-#if defined(CONFIG_EXAMPLE_IPV4) && defined(CONFIG_EXAMPLE_IPV6)
-        if (addr_family == AF_INET6) {
-            // Note that by default IPV6 binds to both protocols, it is must be disabled
-            // if both protocols used at the same time (used in CI)
-            int opt = 1;
-            setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-            setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &opt, sizeof(opt));
-        }
-#endif
-
-        int err = bind(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-        if (err < 0) {
-            ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
-        }
-        ESP_LOGI(TAG, "Socket bound, port %d", UDP_PORT);
-
-        while (1) {
-
-            ESP_LOGI(TAG, "Waiting for data");
-            struct sockaddr_storage source_addr; // Large enough for both IPv4 or IPv6
-            socklen_t socklen = sizeof(source_addr);
-            int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer) - 1, 0, (struct sockaddr *)&source_addr, &socklen);
-
-            // Error occurred during receiving
-            if (len < 0) {
-                ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
-                break;
-            }
-            // Data received
-            else {
-                // Get the sender's ip address as string
-                if (source_addr.ss_family == PF_INET) {
-                    inet_ntoa_r(((struct sockaddr_in *)&source_addr)->sin_addr, addr_str, sizeof(addr_str) - 1);
-                } else if (source_addr.ss_family == PF_INET6) {
-                    inet6_ntoa_r(((struct sockaddr_in6 *)&source_addr)->sin6_addr, addr_str, sizeof(addr_str) - 1);
-                }
-
-                rx_buffer[len] = 0; // Null-terminate whatever we received and treat like a string...
-                ESP_LOGI(TAG, "Received %d bytes from %s:", len, addr_str);
-                ESP_LOGI(TAG, "%s", rx_buffer);
-
-                // int err = sendto(sock, rx_buffer, len, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
-                // if (err < 0) {
-                //     ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
-                //     break;
-                // }
-                udpReceiveCallback((uint8_t*)rx_buffer, len, source_addr);
-            }
-        }
-
-        if (sock != -1) {
-            ESP_LOGE(TAG, "Shutting down socket and restarting...");
-            shutdown(sock, 0);
-            close(sock);
-        }
-    }
-    vTaskDelete(NULL);
-}
 
 void app_main()
 {
@@ -286,6 +226,8 @@ void app_main()
      */
     esp_log_level_set("*", ESP_LOG_INFO);
     esp_log_level_set(TAG, ESP_LOG_DEBUG);
+    esp_log_level_set("mupgrade_root", ESP_LOG_DEBUG);
+    esp_log_level_set("mupgrade_node", ESP_LOG_DEBUG);
 
     /**
      * @brief Initialize wifi mesh.
@@ -299,12 +241,15 @@ void app_main()
     /**
      * @brief Data transfer between wifi mesh devices
      */
-    xTaskCreate(root_task, "root_task", 4 * 1024,
+    xTaskCreate(root_read_task, "root_read_task", 4 * 1024,
                 NULL, CONFIG_MDF_TASK_DEFAULT_PRIOTY, NULL);
-    
-    xTaskCreate(udp_server_task, "udp_server", 4096, (void*)AF_INET, 5, NULL);
+
+    xTaskCreate(node_read_task, "node_read_task", 4 * 1024,
+                NULL, CONFIG_MDF_TASK_DEFAULT_PRIOTY, NULL);
 
     TimerHandle_t timer = xTimerCreate("print_system_info", 10000 / portTICK_RATE_MS,
                                        true, NULL, print_system_info_timercb);
     xTimerStart(timer, 0);
+
+    udpInit();
 }
