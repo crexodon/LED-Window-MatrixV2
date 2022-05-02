@@ -20,7 +20,7 @@ static void ota_task(const char *upgrade_url)
      *       If you upgrade the incoming address list to the specified device
      */
     // uint8_t dest_addr[][MWIFI_ADDR_LEN] = {{0x1, 0x1, 0x1, 0x1, 0x1, 0x1}, {0x2, 0x2, 0x2, 0x2, 0x2, 0x2},};
-    uint8_t dest_addr[][MWIFI_ADDR_LEN] = {MWIFI_ADDR_ANY};
+    uint8_t dest_addr[][MWIFI_ADDR_LEN] = {MWIFI_ADDR_BROADCAST};   // ADDR_BROADCAST = all nodes except root
 
     /**
      * @brief In order to allow more nodes to join the mesh network for firmware upgrade,
@@ -103,6 +103,14 @@ static void ota_task(const char *upgrade_url)
     /**
      * @brief 4. The firmware will be sent to each node.
      */
+
+    // if name of firwmare is name of root node, set destination address to itself, otherwise leave it at broadcast
+    if (strcmp(name, TAG) == 0) {
+        uint8_t sta_mac[MWIFI_ADDR_LEN] = {0};
+        esp_wifi_get_mac(ESP_IF_WIFI_STA, sta_mac);
+        memcpy(dest_addr[0], sta_mac, MWIFI_ADDR_LEN);
+    }
+
     ret = mupgrade_firmware_send((uint8_t *)dest_addr, sizeof(dest_addr) / MWIFI_ADDR_LEN, &upgrade_result);
     MDF_ERROR_GOTO(ret != MDF_OK, EXIT, "<%s> mupgrade_firmware_send", mdf_err_to_name(ret));
 
@@ -151,6 +159,5 @@ void otaHandleEvent(mdf_event_loop_t event, void *ctx) {
 }
 
 void otaStart(const char *upgrade_url) {
-    // TODO: also handle upgrade target, currently hardcoded to broadcast
     xTaskCreate(ota_task, "ota_task", 4 * 1024, upgrade_url, CONFIG_MDF_TASK_DEFAULT_PRIOTY, NULL);
 }
