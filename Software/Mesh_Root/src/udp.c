@@ -6,7 +6,7 @@
 #include "ota.h"
 
 // example UDP command in bash for setting LEDs:    echo -ne "\x7c\x9e\xbd\xf4\xdd\x84\x01\x00\x00\xFF\x00\xFF\x00\xFF\x00\x00\xFF\xAF\x00\x00\x00\x00" | nc -u -w0 192.168.1.73 7715
-// example UDP command in bash for triggering OTA:  echo -ne "\x00\x00\x00\x00\x00\x00\x65http://192.168.1.118:8080/mesh_node.bin\x00" | nc -u -w0 192.168.1.73 7715
+// example UDP command in bash for triggering OTA:  echo -ne "\x00\x00\x00\x00\x00\x00\x65http://192.168.1.118:8077/mesh_node.bin\x00" | nc -u -w0 192.168.1.73 7715
 
 void udpReceiveCallback(uint8_t *payload, size_t payloadLen, struct sockaddr_storage sourceAddr) {
     ledPayload_t* packet = (ledPayload_t*)payload;
@@ -81,7 +81,7 @@ static void udp_server_task(void *pvParameters)
 
         while (1) {
 
-            ESP_LOGI(TAG, "Waiting for data");
+            // ESP_LOGI(TAG, "Waiting for data");
             struct sockaddr_storage source_addr; // Large enough for both IPv4 or IPv6
             socklen_t socklen = sizeof(source_addr);
             int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer) - 1, 0, (struct sockaddr *)&source_addr, &socklen);
@@ -100,9 +100,9 @@ static void udp_server_task(void *pvParameters)
                     inet6_ntoa_r(((struct sockaddr_in6 *)&source_addr)->sin6_addr, addr_str, sizeof(addr_str) - 1);
                 }
 
-                rx_buffer[len] = 0; // Null-terminate whatever we received and treat like a string...
-                ESP_LOGI(TAG, "Received %d bytes from %s:", len, addr_str);
-                ESP_LOGI(TAG, "%s", rx_buffer);
+                // rx_buffer[len] = 0; // Null-terminate whatever we received and treat like a string...
+                // ESP_LOGI(TAG, "Received %d bytes from %s:", len, addr_str);
+                // ESP_LOGI(TAG, "%s", rx_buffer);
 
                 // int err = sendto(sock, rx_buffer, len, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
                 // if (err < 0) {

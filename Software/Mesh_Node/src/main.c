@@ -54,8 +54,6 @@ static void node_read_task(void *arg)
             MDF_ERROR_CONTINUE(ret != MDF_OK, "<%s> mupgrade_handle", mdf_err_to_name(ret));
         }
         else {
-            MDF_LOGI("Node receive, addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
-
             switch (data_type.custom) {
                 case CMD_LedData:
                     ledSetData((uint8_t*)data, size);
@@ -65,6 +63,10 @@ static void node_read_task(void *arg)
                     MDF_LOGW("The device will restart after 1 seconds");
                     vTaskDelay(pdMS_TO_TICKS(1000));
                     esp_restart();
+                    break;
+                default:
+                    MDF_LOGI("Node receive, addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
+                    break;
             }
         }
     }
