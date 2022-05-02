@@ -5,7 +5,8 @@
 #include "globals.h"
 #include "ota.h"
 
-// example UDP command in bash for setting LEDs:   echo -e "\x7c\x9e\xbd\xf4\xdd\x84\x01\x00\x00\xFF\x00\xFF\x00\xFF\x00\x00\xFF\xAF\x00\x00\x00\x00" | nc -u -w0 192.168.1.105 7715
+// example UDP command in bash for setting LEDs:    echo -ne "\x7c\x9e\xbd\xf4\xdd\x84\x01\x00\x00\xFF\x00\xFF\x00\xFF\x00\x00\xFF\xAF\x00\x00\x00\x00" | nc -u -w0 192.168.1.73 7715
+// example UDP command in bash for triggering OTA:  echo -ne "\x00\x00\x00\x00\x00\x00\x65http://192.168.1.118:8080/mesh_node.bin\x00" | nc -u -w0 192.168.1.73 7715
 
 void udpReceiveCallback(uint8_t *payload, size_t payloadLen, struct sockaddr_storage sourceAddr) {
     ledPayload_t* packet = (ledPayload_t*)payload;
@@ -21,7 +22,12 @@ void udpReceiveCallback(uint8_t *payload, size_t payloadLen, struct sockaddr_sto
         default: {  // forward everything else to nodes
             mwifi_data_type_t data_type = {0x0};
             data_type.custom = packet->command;
-            mdf_err_t ret = mwifi_root_write(packet->mac, 1, &data_type, packet->data, dataLen, false);
+
+            // place dummy value in data, if no additional payload is given, otherwise mwifi_write throws an error
+            const void *dataToSend = dataLen > 0 ? packet->data : &packet->command; 
+            dataLen = dataLen > 0 ? dataLen : 1;
+
+            mdf_err_t ret = mwifi_root_write(packet->mac, 1, &data_type, dataToSend, dataLen, false);
         }
     }
 }
