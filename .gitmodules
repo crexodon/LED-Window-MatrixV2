@@ -4,3 +4,6 @@
 [submodule "Software/PixelBridge"]
 	path = Software/PixelBridge
 	url = git@github.com:crexodon/PixelBridge.git
+[submodule "Software/Trinity"]
+	path = Software/Trinity
+	url = https://github.com/nimartin99/Trinity
