@@ -201,6 +201,10 @@ static mdf_err_t event_loop_cb(mdf_event_loop_t event, void *ctx)
 
 void app_main()
 {
+    ledInit();
+    TimerHandle_t ledLoopTimer = xTimerCreate("led_loop", pdMS_TO_TICKS(100), true, NULL, ledLoop); // TODO: check if callback works like this
+    xTimerStart(ledLoopTimer, 0);
+
     mwifi_init_config_t cfg = MWIFI_INIT_CONFIG_DEFAULT();
     mwifi_config_t config   = {
         .channel   = CONFIG_MESH_CHANNEL,
@@ -238,5 +242,5 @@ void app_main()
                                        true, NULL, print_system_info_timercb);
     xTimerStart(timer, 0);
 
-    ledInit();
+
 }
