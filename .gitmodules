@@ -7,3 +7,6 @@
 [submodule "Software/Trinity"]
 	path = Software/Trinity
 	url = https://github.com/nimartin99/Trinity
+[submodule "Software/rest-api-2-tmp2net"]
+	path = Software/rest-api-2-tmp2net
+	url = git@github.com:noteurt/rest-api-2-tmp2net.git
