@@ -21,26 +21,28 @@
 
 // #define MEMORY_DEBUG
 
-typedef struct {
+typedef struct
+{
     uint8_t command;
     uint8_t data[];
 } ledMeshPayload_t;
 
 // static const uint8_t ledMeshPayloadHeaderSize = sizeof(ledMeshPayload_t);
 
-
 static void node_read_task(void *arg)
 {
     mdf_err_t ret = MDF_OK;
-    char *data    = MDF_MALLOC(MWIFI_PAYLOAD_LEN);
-    size_t size   = MWIFI_PAYLOAD_LEN;
-    mwifi_data_type_t data_type      = {0x0};
+    char *data = MDF_MALLOC(MWIFI_PAYLOAD_LEN);
+    size_t size = MWIFI_PAYLOAD_LEN;
+    mwifi_data_type_t data_type = {0x0};
     uint8_t src_addr[MWIFI_ADDR_LEN] = {0x0};
 
     MDF_LOGI("Note read task is running");
 
-    for (;;) {
-        if (!mwifi_is_connected()) {
+    for (;;)
+    {
+        if (!mwifi_is_connected())
+        {
             vTaskDelay(500 / portTICK_RATE_MS);
             continue;
         }
@@ -49,22 +51,25 @@ static void node_read_task(void *arg)
         memset(data, 0, MWIFI_PAYLOAD_LEN);
         ret = mwifi_read(src_addr, &data_type, data, &size, portMAX_DELAY);
         MDF_ERROR_CONTINUE(ret != MDF_OK, "mwifi_read, ret: %x", ret);
-        if (data_type.upgrade) {
+        if (data_type.upgrade)
+        {
             ret = mupgrade_handle(src_addr, data, size);
             MDF_ERROR_CONTINUE(ret != MDF_OK, "<%s> mupgrade_handle", mdf_err_to_name(ret));
         }
-        else {
+        else
+        {
             MDF_LOGI("Node receive, addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
 
-            switch (data_type.custom) {
-                case CMD_LedData:
-                    ledSetData((uint8_t*)data, size);
-                    break;
-                case CMD_Restart:
-                    MDF_LOGI("Restarting the node...");
-                    MDF_LOGW("The device will restart after 1 seconds");
-                    vTaskDelay(pdMS_TO_TICKS(1000));
-                    esp_restart();
+            switch (data_type.custom)
+            {
+            case CMD_LedData:
+                ledSetData((uint8_t *)data, size);
+                break;
+            case CMD_Restart:
+                MDF_LOGI("Restarting the node...");
+                MDF_LOGW("The device will restart after 1 seconds");
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                esp_restart();
             }
         }
     }
@@ -78,15 +83,17 @@ static void node_read_task(void *arg)
 void node_write_task(void *arg)
 {
     mdf_err_t ret = MDF_OK;
-    int count     = 0;
-    size_t size   = 0;
-    char *data    = MDF_MALLOC(MWIFI_PAYLOAD_LEN);
+    int count = 0;
+    size_t size = 0;
+    char *data = MDF_MALLOC(MWIFI_PAYLOAD_LEN);
     mwifi_data_type_t data_type = {0x0};
 
     MDF_LOGI("Node write task is running");
 
-    for (;;) {
-        if (!mwifi_is_connected()) {
+    for (;;)
+    {
+        if (!mwifi_is_connected())
+        {
             vTaskDelay(500 / portTICK_RATE_MS);
             continue;
         }
@@ -109,11 +116,11 @@ void node_write_task(void *arg)
  */
 static void print_system_info_timercb(void *timer)
 {
-    uint8_t primary                 = 0;
-    wifi_second_chan_t second       = 0;
-    mesh_addr_t parent_bssid        = {0};
+    uint8_t primary = 0;
+    wifi_second_chan_t second = 0;
+    mesh_addr_t parent_bssid = {0};
     uint8_t sta_mac[MWIFI_ADDR_LEN] = {0};
-    wifi_sta_list_t wifi_sta_list   = {0x0};
+    wifi_sta_list_t wifi_sta_list = {0x0};
 
     esp_wifi_get_mac(ESP_IF_WIFI_STA, sta_mac);
     esp_wifi_ap_get_sta_list(&wifi_sta_list);
@@ -121,17 +128,20 @@ static void print_system_info_timercb(void *timer)
     esp_mesh_get_parent_bssid(&parent_bssid);
 
     MDF_LOGI("System information, channel: %d, layer: %d, self mac: " MACSTR ", parent bssid: " MACSTR
-             ", parent rssi: %d, node num: %d, free heap: %u", primary,
+             ", parent rssi: %d, node num: %d, free heap: %u",
+             primary,
              esp_mesh_get_layer(), MAC2STR(sta_mac), MAC2STR(parent_bssid.addr),
              mwifi_get_parent_rssi(), esp_mesh_get_total_node_num(), esp_get_free_heap_size());
 
-    for (int i = 0; i < wifi_sta_list.num; i++) {
+    for (int i = 0; i < wifi_sta_list.num; i++)
+    {
         MDF_LOGI("Child mac: " MACSTR, MAC2STR(wifi_sta_list.sta[i].mac));
     }
 
 #ifdef MEMORY_DEBUG
 
-    if (!heap_caps_check_integrity_all(true)) {
+    if (!heap_caps_check_integrity_all(true))
+    {
         MDF_LOGE("At least one heap is corrupt");
     }
 
@@ -143,10 +153,11 @@ static void print_system_info_timercb(void *timer)
 
 static mdf_err_t wifi_init()
 {
-    mdf_err_t ret          = nvs_flash_init();
+    mdf_err_t ret = nvs_flash_init();
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
 
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
         MDF_ERROR_ASSERT(nvs_flash_erase());
         ret = nvs_flash_init();
     }
@@ -177,21 +188,22 @@ static mdf_err_t event_loop_cb(mdf_event_loop_t event, void *ctx)
 {
     MDF_LOGI("event_loop_cb, event: %d", event);
 
-    switch (event) {
-        case MDF_EVENT_MWIFI_STARTED:
-            MDF_LOGI("MESH is started");
-            break;
+    switch (event)
+    {
+    case MDF_EVENT_MWIFI_STARTED:
+        MDF_LOGI("MESH is started");
+        break;
 
-        case MDF_EVENT_MWIFI_PARENT_CONNECTED:
-            MDF_LOGI("Parent is connected on station interface");
-            break;
+    case MDF_EVENT_MWIFI_PARENT_CONNECTED:
+        MDF_LOGI("Parent is connected on station interface");
+        break;
 
-        case MDF_EVENT_MWIFI_PARENT_DISCONNECTED:
-            MDF_LOGI("Parent is disconnected on station interface");
-            break;
+    case MDF_EVENT_MWIFI_PARENT_DISCONNECTED:
+        MDF_LOGI("Parent is disconnected on station interface");
+        break;
 
-        default:
-            break;
+    default:
+        break;
     }
 
     return MDF_OK;
@@ -199,10 +211,12 @@ static mdf_err_t event_loop_cb(mdf_event_loop_t event, void *ctx)
 
 void app_main()
 {
+    gpio_set_direction(GPIO_NUM_14, GPIO_MODE_OUTPUT);
+    gpio_set_level(GPIO_NUM_14, 1);
     mwifi_init_config_t cfg = MWIFI_INIT_CONFIG_DEFAULT();
-    mwifi_config_t config   = {
-        .channel   = CONFIG_MESH_CHANNEL,
-        .mesh_id   = CONFIG_MESH_ID,
+    mwifi_config_t config = {
+        .channel = CONFIG_MESH_CHANNEL,
+        .mesh_id = CONFIG_MESH_ID,
         .mesh_type = CONFIG_DEVICE_TYPE,
     };
 
