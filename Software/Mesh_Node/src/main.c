@@ -427,6 +427,7 @@ void app_main()
 {
     gpio_set_direction(GPIO_NUM_14, GPIO_MODE_OUTPUT);
     gpio_set_level(GPIO_NUM_14, 1);
+
     mwifi_init_config_t cfg = MWIFI_INIT_CONFIG_DEFAULT();
     mwifi_config_t config = {
         .channel = CONFIG_MESH_CHANNEL,
